@@ -4,6 +4,7 @@ import numpy as np
 import daal4py as d4p
 import random
 from utils import qr_algo
+from const import T_LIM, P_REPEAT
 
 
 class AlgoType(Enum):
@@ -56,7 +57,7 @@ class ShiftRegister(GossipAlgo):
         self.omega = 2 * (1 - np.sqrt(self.gamma * (1 - (self.gamma / 4)))) / ((1 - (self.gamma / 2)) ** 2)
         self.omega_measure = 1 + (1 / self.graph_A.shape[0]) * (
                 (4 - np.sqrt(4 - (1 + (self.eigenvalues[-2]) ** 2))) / (1 + self.eigenvalues[-2]) - 2)
-        #print(f"DEBUG: omega = {self.omega}, measure = {self.omega_measure}")
+        # print(f"DEBUG: omega = {self.omega}, measure = {self.omega_measure}")
         self.measure = self.omega_measure
 
     def compute(self):
@@ -72,14 +73,13 @@ class ShiftRegister(GossipAlgo):
 
 
 class JacobiAlgo(GossipAlgo):
-    T_LIM = 1000
-    P_REPEAT = 100
+
     # стабилизация частоты
 
     def __init__(self, start_values, iteration_num, graph_matrix):
         super(JacobiAlgo, self).__init__(start_values, iteration_num, graph_matrix)
         self.d = self.calculate_spectral()
-        print(f"DEBUG: d = {self.d}")
+        # print(f"DEBUG: d = {self.d}")
         self.a_0 = (self.d + 4) / (2 * (2 + self.d))
         self.b_0 = self.d / (2 * (2 + self.d))
 
@@ -87,10 +87,12 @@ class JacobiAlgo(GossipAlgo):
         lazy_W = (np.eye(self.matrix_W.shape[0]) + self.matrix_W) * 0.5
 
         avg_init_vertex_count = 0
-
-        for _ in range(self.P_REPEAT):
+        for _ in range(P_REPEAT):
+            vertex_freq = np.array([0 for i in range(lazy_W.shape[0])], dtype='float64')
             curr_vertex = 0
-            for step in range(self.T_LIM):
+            for step in range(T_LIM):
+                # print(f"DEBUG: current vertex is {curr_vertex}")
+                vertex_freq[curr_vertex] += 1
                 chance = random.random()
                 lower = 0
                 for candidate in range(lazy_W.shape[0]):
@@ -100,14 +102,19 @@ class JacobiAlgo(GossipAlgo):
                         break
                     else:
                         lower += lazy_W[curr_vertex, candidate]
-
+            vertex_freq /= T_LIM
+            # print(f"Check: {np.linalg.norm(vertex_freq) - np.linalg.norm(vertex_freq.dot(lazy_W))}")
+            # print(f"DEBUG: p_vector = {vertex_freq}")
+            # print(f"DEBUG: sum p_vector = {np.sum(vertex_freq)}")
             if curr_vertex == 0:
                 avg_init_vertex_count += 1
 
-        p_t = avg_init_vertex_count / self.P_REPEAT
-        #print(f"DEBUG: p_t = {p_t}")
-        #сделать косвенную проверку
-        return (-2) * (np.log(p_t / self.T_LIM))
+        p_t = avg_init_vertex_count / float(P_REPEAT)
+        # vertex_freq /= self.T_LIM
+        print(f"DEBUG: p_t = {p_t}")
+        # print(f"DEBUG: {np.linalg.norm(vertex_freq - vertex_freq.dot(lazy_W))}")
+        # сделать косвенную проверку
+        return (-2) * (np.log(p_t / T_LIM + 0.00001))
         # return (-2) * (np.log(p_t) / np.log(self.T_LIM))
 
     def compute(self):
@@ -126,7 +133,7 @@ class JacobiAlgo(GossipAlgo):
             curr, prev = iter_value, curr
 
             efficiency = np.round(np.linalg.norm(curr - self.means), self.ROUND_PRECISION)
-            #print(f"debug: jacobi efficiency = {efficiency}")
+            # print(f"debug: jacobi efficiency = {efficiency}")
             self.y_list.append(np.exp(np.log(efficiency + 0.0000001) / t))
 
         return curr
